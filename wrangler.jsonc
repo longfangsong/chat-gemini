@@ -7,9 +7,16 @@
 	"name": "chat-gemini",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-21",
+	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true
-	}
+	},
+	"kv_namespaces": [
+		{
+			"binding": "CHAT_HISTORY",
+			"id": "67a12bb36c4c42af87e71a4529e2ff0e"
+		}
+	]
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
