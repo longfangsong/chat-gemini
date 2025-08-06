@@ -8,7 +8,7 @@
  * 注意：你需要在 wrangler.toml 中设置 TELEGRAM_BOT_TOKEN 和 GOOGLE_API_KEY 环境变量
  */
 
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, ChatSession, DynamicRetrievalMode } from '@google/generative-ai';
+import { Chat, GoogleGenAI, createUserContent } from '@google/genai';
 import telegramifyMarkdown from 'telegramify-markdown';
 
 export interface Env {
@@ -63,26 +63,34 @@ interface ChatHistory {
 function setupGeminiModel(apiKey: string, chatHistory: ChatHistory) {
 	const accountId = 'ba6c3ee6481f83e9ced0460cb55a4ade';
 	const gatewayName = 'gemini-bot';
-	let session = new ChatSession(
-		apiKey,
-		'models/gemini-2.0-flash',
-		{
-			history: chatHistory.messages.map((message) => ({
-				role: message.role,
-				parts: [{ text: message.content }],
-			})),
-			tools: [
-				{
-					// @ts-ignore - google_search is a valid tool but not typed in the SDK yet
-					google_search: {},
-				},
-			],
-		},
-		{
+
+	const genAI = new GoogleGenAI({
+		apiKey: apiKey,
+		httpOptions: {
 			baseUrl: `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayName}/google-ai-studio`,
-		}
-	);
-	return session;
+		},
+	});
+	const config = {
+		tools: [{ googleSearch: {} }, { urlContext: {} }],
+		systemInstruction: `You are an AI assistant in a group chat. Your goal is to be a helpful and accurate conversational partner.
+
+# Key responsibilities
+
+- Answer with the same language as the user.
+- Answer user questions and provide relevant information based on the ongoing conversation.
+- Proactively use your search tool to fact-check information and ensure your responses are accurate and up-to-date.
+- Maintain a natural, conversational, and friendly tone.
+- Avoid generating content that is unhelpful, offensive, or biased.`,
+	};
+	const chat = genAI.chats.create({
+		model: 'gemini-2.5-flash',
+		history: chatHistory.messages.map((message) => ({
+			role: message.role,
+			parts: [{ text: message.content }],
+		})),
+		config
+	});
+	return chat;
 }
 
 // 发送消息到 Telegram
@@ -240,12 +248,10 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 	}
 
 	const chat = setupGeminiModel(env.GOOGLE_API_KEY, chatHistory);
-
 	try {
 		// 使用 sendTypingUntilDone 包装 AI 生成过程
-		const result = await sendTypingUntilDone(env.TELEGRAM_BOT_TOKEN, message.chat.id, chat.sendMessage(userText));
-
-		const botResponse = result.response.text();
+		const result = await sendTypingUntilDone(env.TELEGRAM_BOT_TOKEN, message.chat.id, chat.sendMessage({ message: userText }));
+		const botResponse = result.text;
 
 		chatHistory.messages.push({
 			role: 'user',
