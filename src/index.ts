@@ -15,6 +15,12 @@ export interface Env {
 	TELEGRAM_BOT_TOKEN: string;
 	GOOGLE_API_KEY: string;
 	CHAT_HISTORY: KVNamespace;
+	ALLOWED_CHAT_IDS: string;
+}
+
+// 白名单chat ID列表
+function getAllowedChatIds(env: Env): number[] {
+	return env.ALLOWED_CHAT_IDS.split(',').map((id) => parseInt(id.trim()));
 }
 
 // 定义消息类型
@@ -88,7 +94,7 @@ function setupGeminiModel(apiKey: string, chatHistory: ChatHistory) {
 			role: message.role,
 			parts: [{ text: message.content }],
 		})),
-		config
+		config,
 	});
 	return chat;
 }
@@ -203,6 +209,17 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 	}
 
 	const message = update.message;
+
+	// 检查白名单
+	if (!getAllowedChatIds(env).includes(message.chat.id)) {
+		await sendTelegramMessage(
+			env.TELEGRAM_BOT_TOKEN,
+			message.chat.id,
+			'Sorry, you are not authorized to use this bot. You may fork the repo at https://github.com/longfangsong/chat-gemini, deploy your own instance at Cloudflare for free with a free Google Gemini API key.',
+			message.message_id,
+		);
+		return new Response('Unauthorized chat', { status: 200 });
+	}
 
 	// 检查是否是群聊
 	const isGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
