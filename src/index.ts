@@ -8,7 +8,7 @@
  * 注意：你需要在 wrangler.toml 中设置 TELEGRAM_BOT_TOKEN 和 GOOGLE_API_KEY 环境变量
  */
 
-import { Chat, GoogleGenAI, createUserContent } from '@google/genai';
+import { Chat, GoogleGenAI, createUserContent, ThinkingLevel } from '@google/genai';
 import telegramifyMarkdown from 'telegramify-markdown';
 
 export interface Env {
@@ -78,6 +78,10 @@ function setupGeminiModel(apiKey: string, chatHistory: ChatHistory) {
 	});
 	const config = {
 		tools: [{ googleSearch: {} }, { urlContext: {} }],
+		thinkingConfig: {
+			includeThoughts: true,
+			thinkingLevel: ThinkingLevel.HIGH,
+		},
 		systemInstruction: `You are an AI assistant in a group chat. Your goal is to be a helpful and accurate conversational partner.
 
 # Key responsibilities
@@ -89,7 +93,7 @@ function setupGeminiModel(apiKey: string, chatHistory: ChatHistory) {
 - Avoid generating content that is unhelpful, offensive, or biased.`,
 	};
 	const chat = genAI.chats.create({
-		model: 'gemini-2.5-flash',
+		model: 'gemini-3-flash-preview',
 		history: chatHistory.messages.map((message) => ({
 			role: message.role,
 			parts: [{ text: message.content }],
