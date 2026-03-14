@@ -34,7 +34,7 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	"vars": { "ALLOWED_CHAT_IDS": "-1001649431335, 1199598103" },
+	"vars": { "ALLOWED_CHAT_IDS": "-1001649431335, 1199598103, -909449313" },
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/

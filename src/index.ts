@@ -8,7 +8,8 @@
  * 注意：你需要在 wrangler.toml 中设置 TELEGRAM_BOT_TOKEN 和 GOOGLE_API_KEY 环境变量
  */
 
-import { Chat, GoogleGenAI, createUserContent } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
+import { createClient } from 'redis';
 import telegramifyMarkdown from 'telegramify-markdown';
 
 export interface Env {
@@ -16,6 +17,8 @@ export interface Env {
 	GOOGLE_API_KEY: string;
 	CHAT_HISTORY: KVNamespace;
 	ALLOWED_CHAT_IDS: string;
+	REDIS_HOST: string;
+	REDIS_PASSWORD: string;
 }
 
 // 白名单chat ID列表
@@ -115,7 +118,7 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
 		}),
 	});
 
-	return response.json<{ result: { message_id: number } }>();
+	return response.json<{ ok: boolean; result: { message_id: number }; description?: string }>();
 }
 
 // 发送"正在输入"状态到 Telegram
@@ -202,13 +205,34 @@ async function sendTypingUntilDone(botToken: string, chatId: number, promise: Pr
 	}
 }
 
+async function connectRedis(env: Env) {
+	const client = createClient({
+		username: 'default',
+		password: env.REDIS_PASSWORD,
+		socket: {
+			host: env.REDIS_HOST,
+			port: 15820,
+		},
+	});
+	client.on('error', (err: Error) => console.log('Redis Client Error', err));
+
+	await client.connect();
+	return client;
+}
+
+async function polyfillSession(kv: KVNamespace, reply_to: TelegramMessage) {
+	await kv.put(`message-session:${reply_to.message_id}`, reply_to.message_id.toString(), { expirationTtl: 60 * 60 * 24 });
+	return reply_to.message_id;
+}
+
 // 处理 Telegram 更新
-async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
-	if (!update.message || !update.message.text) {
+async function handleTelegramUpdate(update: TelegramUpdate, env: Env, ctx: ExecutionContext) {
+	if (!update.message || !update.message.text || !update.message.message_id) {
 		return new Response('No message text found', { status: 200 });
 	}
 
 	const message = update.message;
+	console.log('Received message:', message);
 
 	// 检查白名单
 	if (!getAllowedChatIds(env).includes(message.chat.id)) {
@@ -220,6 +244,12 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 		);
 		return new Response('Unauthorized chat', { status: 200 });
 	}
+
+	const redis = await connectRedis(env);
+	const setMessageTask = redis.set(`${message.chat.id}:${message.message_id}`, JSON.stringify(message), {
+		expiration: { type: 'EX', value: 60 * 60 * 24 },
+	});
+	ctx.waitUntil(setMessageTask);
 
 	// 检查是否是群聊
 	const isGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
@@ -242,7 +272,6 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 	if (userText.includes(`@${botUsername}`)) {
 		userText = userText.replace(new RegExp(`@${botUsername}\\s*`, 'g'), '').trim();
 	}
-
 	let sessionId = await getMessageSession(env.CHAT_HISTORY, message.reply_to_message?.message_id);
 	let chatHistory;
 	if (sessionId !== null) {
@@ -255,6 +284,13 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 				lastUpdated: Date.now(),
 			};
 		}
+	} else if (sessionId === null && message.reply_to_message) {
+		// @bot to see an existing session
+		sessionId = await polyfillSession(env.CHAT_HISTORY, message.reply_to_message);
+		chatHistory = {
+			messages: [{ role: 'user' as 'user', content: message.reply_to_message.text! }],
+			lastUpdated: Date.now(),
+		};
 	} else {
 		// new session
 		sessionId = await createMessageSession(env.CHAT_HISTORY, message.message_id);
@@ -267,7 +303,11 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 	const chat = setupGeminiModel(env.GOOGLE_API_KEY, chatHistory);
 	try {
 		// 使用 sendTypingUntilDone 包装 AI 生成过程
-		const result = await sendTypingUntilDone(env.TELEGRAM_BOT_TOKEN, message.chat.id, chat.sendMessage({ message: userText }));
+		let sendToAI = userText;
+		if (sessionId === null && message.reply_to_message) {
+			sendToAI = message.reply_to_message.text + '\n\n' + userText;
+		}
+		const result = await sendTypingUntilDone(env.TELEGRAM_BOT_TOKEN, message.chat.id, chat.sendMessage({ message: sendToAI }));
 		const botResponse = result.text;
 
 		chatHistory.messages.push({
@@ -282,8 +322,11 @@ async function handleTelegramUpdate(update: TelegramUpdate, env: Env) {
 		await saveChatHistory(env.CHAT_HISTORY, sessionId, chatHistory);
 
 		const sendResult = await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, message.chat.id, botResponse, message.message_id);
+		if (sendResult.description === 'Bad Request: message to be replied not found') {
+			// the user may has deleted the message
+			return new Response('Not necessary to response', { status: 200 });
+		}
 		await setMessageSession(env.CHAT_HISTORY, sendResult.result.message_id, sessionId);
-
 		return new Response('Message sent', { status: 200 });
 	} catch (error) {
 		console.error('Error generating response:', error);
@@ -303,10 +346,11 @@ export default {
 
 		try {
 			const update: TelegramUpdate = await request.json();
-			return await handleTelegramUpdate(update, env);
+			return await handleTelegramUpdate(update, env, ctx);
 		} catch (error) {
 			console.error('Error processing request:', error);
 			return new Response('Error processing request', { status: 500 });
 		}
 	},
+	async scheduled(controller: ScheduledController, env: Env): Promise<void> {},
 };
