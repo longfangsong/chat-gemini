@@ -7,7 +7,9 @@
 	"name": "chat-gemini",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-21",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"observability": {
 		"enabled": true,
 	},
@@ -17,35 +19,40 @@
 			"id": "67a12bb36c4c42af87e71a4529e2ff0e",
 		},
 	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "chat-history",
+			"database_id": "c427ceb2-72f3-4630-8f53-07acad55f8b7"
+		}
+	],
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
 	 */
 	// "placement": { "mode": "smart" },
-
 	/**
 	 * Bindings
 	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
 	 * databases, object storage, AI inference, real-time communication and more.
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
 	 */
-
 	/**
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	"vars": { "ALLOWED_CHAT_IDS": "-1001649431335, 1199598103, -909449313" },
+	"vars": {
+		"ALLOWED_CHAT_IDS": "-1001649431335, 1199598103, -909449313"
+	},
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
-
 	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */
 	// "assets": { "directory": "./public/", "binding": "ASSETS" },
-
 	/**
 	 * Service Bindings (communicate between multiple Workers)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
